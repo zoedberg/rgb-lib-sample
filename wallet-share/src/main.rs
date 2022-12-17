@@ -1,23 +1,14 @@
-use once_cell::sync::Lazy;
-
-#[cfg(feature = "wallet")]
-use rgb_lib::wallet::Wallet;
-
-use rgb_lib::wallet::WalletData;
-use std::sync::{Arc, RwLock};
+use rgb_lib::wallet::{Wallet, WalletData};
+use std::sync::Mutex;
 
 pub struct WalletState {
-    wallet_data: Option<WalletData>,
-    #[cfg(feature = "wallet")]
-    wallet: Option<Wallet>,
+    wallet: Mutex<Wallet>,
 }
 
 impl WalletState {
-    fn new() -> WalletState {
+    fn new(wallet_data: WalletData) -> WalletState {
         WalletState {
-            wallet_data: None,
-            #[cfg(feature = "wallet")]
-            wallet: None,
+            wallet: Mutex::new(Wallet::new(wallet_data).expect("valid wallet data")),
         }
     }
 }
@@ -26,47 +17,36 @@ impl WalletState {
 mod test {
     use super::*;
 
-    use test_context::{test_context, AsyncTestContext};
+    use once_cell::sync::Lazy;
+    use std::sync::MutexGuard;
 
-    static WALLET_STATE: Lazy<Arc<RwLock<WalletState>>> = Lazy::new(|| Arc::new(RwLock::new(WalletState::new())));
-    
-    pub struct WalletTestContext {
-        pub wallet_state: Arc<RwLock<WalletState>>,
+    static WALLET_STATE: Lazy<WalletState> = Lazy::new(|| {
+        println!("This runs only once");
+        WalletState::new(
+        WalletData {
+            data_dir: "/tmp".to_string(),
+            bitcoin_network: rgb_lib::BitcoinNetwork::Regtest,
+            database_type: rgb_lib::wallet::DatabaseType::Sqlite,
+            pubkey: "tpubD6NzVbkrYhZ4YT9CY6kBTU8xYWq2GQPq4NYzaJer1CRrffVLwzYt5Rs3WhjZJGKaNaiN42JfgtnyGwHXc5n5oPbAUSbxwuwDqZci5kdAZHb".to_string(),
+            mnemonic: Some("save call film frog usual market noodle hope stomach chat word worry".to_string()),
+        })
+    });
+
+    fn _get_wallet() -> MutexGuard<'static, Wallet> {
+        (*WALLET_STATE).wallet.lock().unwrap()
     }
 
-    #[async_trait::async_trait]
-    impl AsyncTestContext for WalletTestContext {
-        async fn setup() -> WalletTestContext {
-            WalletTestContext {
-                wallet_state: Arc::clone(&WALLET_STATE),
-            }
-        }
-
-        async fn teardown(self) {
-            /* nothing to do */
-        }
-    }
-
-    #[test_context(WalletTestContext)]
     #[actix::test]
-    async fn test1(ctx: &mut WalletTestContext) {
-       if let Ok(mut wallet_state) = ctx.wallet_state.write() {
-           wallet_state.wallet_data = Some(WalletData {
-               data_dir: "/tmp".to_string(),
-               bitcoin_network: rgb_lib::BitcoinNetwork::Regtest,
-               database_type: rgb_lib::wallet::DatabaseType::Sqlite,
-               pubkey: "tpubD6NzVbkrYhZ4YT9CY6kBTU8xYWq2GQPq4NYzaJer1CRrffVLwzYt5Rs3WhjZJGKaNaiN42JfgtnyGwHXc5n5oPbAUSbxwuwDqZci5kdAZHb".to_string(),
-               mnemonic: Some("save call film frog usual market noodle hope stomach chat word worry".to_string()),
-           });
-       }
+    async fn test1() {
+        let wallet = _get_wallet();
+        let addr = wallet.get_address();
+        println!("1 ADDRESS: {:?}", addr);
     }
 
-    #[cfg(feature = "wallet")]
-    #[test_context(WalletTestContext)]
     #[actix::test]
-    async fn test2(ctx: &mut WalletTestContext) {
-       if let Ok(mut wallet_state) = ctx.wallet_state.write() {
-           wallet_state.wallet = Some(Wallet::new(wallet_state.wallet.clone()));
-       }
+    async fn test2() {
+        let wallet = _get_wallet();
+        let addr = wallet.get_address();
+        println!("2 ADDRESS: {:?}", addr);
     }
 }
